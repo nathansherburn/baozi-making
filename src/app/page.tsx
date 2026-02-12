@@ -8,6 +8,7 @@ import { getSettings, db } from '@/lib/db';
 import Calendar from '@/components/Calendar';
 import LanguageToggle from '@/components/LanguageToggle';
 import SettingsPage from '@/components/SettingsPage';
+import LoginDialog from '@/components/LoginDialog';
 
 export default function Home() {
   const [lang, setLang] = useState<Language>('zh');
@@ -54,6 +55,7 @@ export default function Home() {
 
   return (
     <LanguageContext.Provider value={{ lang, setLang: handleSetLang }}>
+      <LoginDialog />
       {showSettings ? (
         <SettingsPage
           onClose={() => setShowSettings(false)}

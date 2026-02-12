@@ -24,9 +24,6 @@ export default function SettingsPage({ onClose, onSettingsChanged }: SettingsPag
   const [saved, setSaved] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportDone, setExportDone] = useState(false);
-  const [loginEmail, setLoginEmail] = useState('');
-  const [loginOtp, setLoginOtp] = useState('');
-  const [loginStep, setLoginStep] = useState<'idle' | 'otp' | 'logging-in'>('idle');
 
   // Dexie Cloud user status
   const cloudAvailable = typeof db.cloud !== 'undefined' && !!process.env.NEXT_PUBLIC_DEXIE_CLOUD_DB_URL;
@@ -76,19 +73,6 @@ export default function SettingsPage({ onClose, onSettingsChanged }: SettingsPag
     setSaved(true);
     onSettingsChanged();
     setTimeout(() => setSaved(false), 1500);
-  };
-
-  const handleLogin = async () => {
-    if (!cloudAvailable) return;
-    setLoginStep('otp');
-    try {
-      await db.cloud.login({ email: loginEmail, grant_type: 'otp' });
-      setLoginStep('idle');
-      setLoginEmail('');
-      setLoginOtp('');
-    } catch {
-      setLoginStep('idle');
-    }
   };
 
   const handleLogout = async () => {
@@ -300,7 +284,7 @@ export default function SettingsPage({ onClose, onSettingsChanged }: SettingsPag
           </div>
         </section>
 
-        {/* Cloud Sync */}
+        {/* Cloud Sync / Account */}
         {cloudAvailable && (
           <section className="bg-white/70 rounded-2xl p-5 mb-4">
             <h2 className="text-sm font-bold text-gray-600 mb-1">
@@ -308,7 +292,7 @@ export default function SettingsPage({ onClose, onSettingsChanged }: SettingsPag
             </h2>
             <p className="text-xs text-gray-400 mb-3">{t('cloudSyncHint', lang)}</p>
 
-            {currentUser?.isLoggedIn ? (
+            {currentUser?.isLoggedIn && (
               <div>
                 <div className="flex items-center gap-2 mb-3">
                   <span className="w-2 h-2 rounded-full bg-green-400" />
@@ -322,26 +306,6 @@ export default function SettingsPage({ onClose, onSettingsChanged }: SettingsPag
                              bg-gray-50 text-gray-500 border border-gray-200 hover:bg-red-50 hover:border-red-200 hover:text-red-500"
                 >
                   {t('logout', lang)}
-                </button>
-              </div>
-            ) : (
-              <div>
-                <input
-                  type="email"
-                  value={loginEmail}
-                  onChange={(e) => setLoginEmail(e.target.value)}
-                  placeholder={t('emailPlaceholder', lang)}
-                  className="w-full px-4 py-2.5 rounded-xl bg-blue-50 border border-blue-200 text-gray-700 text-sm
-                             focus:outline-none focus:ring-2 focus:ring-blue-300 placeholder-gray-300 mb-2"
-                />
-                <button
-                  onClick={handleLogin}
-                  disabled={!loginEmail || loginStep === 'otp'}
-                  className="w-full py-3 rounded-xl text-sm font-medium transition-all
-                             bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100
-                             disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  {loginStep === 'otp' ? t('checkEmail', lang) : t('loginToSync', lang)}
                 </button>
               </div>
             )}

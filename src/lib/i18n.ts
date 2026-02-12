@@ -99,6 +99,11 @@ const translations: Record<string, Record<Language, string>> = {
   logout: { zh: '退出登录', en: 'Sign Out' },
   emailPlaceholder: { zh: '输入邮箱地址...', en: 'Enter email address...' },
   checkEmail: { zh: '请查看邮箱中的验证码...', en: 'Check your email for the code...' },
+  // Login dialog
+  loginTitle: { zh: '登录包子成长记', en: 'Sign in to Baozi Diary' },
+  loginSubtitle: { zh: '输入邮箱即可同步数据到所有设备', en: 'Enter your email to sync across devices' },
+  otpSubtitle: { zh: '我们已发送验证码到你的邮箱', en: 'We sent a verification code to your email' },
+  continue: { zh: '继续', en: 'Continue' },
 };
 
 export function t(key: string, lang: Language): string {

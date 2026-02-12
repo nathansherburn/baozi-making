@@ -47,7 +47,7 @@ const cloudUrl = typeof window !== 'undefined'
 if (cloudUrl) {
   db.cloud.configure({
     databaseUrl: cloudUrl,
-    requireAuth: false, // app works offline/without login
+    requireAuth: true, // require login for cloud sync
     customLoginGui: true, // we build our own login UI
   });
 }
