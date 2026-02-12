@@ -5,6 +5,8 @@ import JSZip from 'jszip';
 import { db, getSettings, getPregnancyInfo, type AppSettings } from '@/lib/db';
 import { useLanguage, t } from '@/lib/i18n';
 import { requestNotificationPermission, registerServiceWorker, scheduleNotification } from '@/lib/notifications';
+import { useObservable } from 'dexie-react-hooks';
+import type { UserLogin } from 'dexie-cloud-addon';
 
 interface SettingsPageProps {
   onClose: () => void;
@@ -22,6 +24,16 @@ export default function SettingsPage({ onClose, onSettingsChanged }: SettingsPag
   const [saved, setSaved] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportDone, setExportDone] = useState(false);
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginOtp, setLoginOtp] = useState('');
+  const [loginStep, setLoginStep] = useState<'idle' | 'otp' | 'logging-in'>('idle');
+
+  // Dexie Cloud user status
+  const cloudAvailable = typeof db.cloud !== 'undefined' && !!process.env.NEXT_PUBLIC_DEXIE_CLOUD_DB_URL;
+  const currentUser = useObservable<UserLogin | undefined>(
+    () => cloudAvailable ? db.cloud.currentUser : ({ subscribe: () => ({ unsubscribe: () => {} }) }) as any,
+    [cloudAvailable]
+  );
 
   useEffect(() => {
     getSettings().then((s) => {
@@ -53,8 +65,8 @@ export default function SettingsPage({ onClose, onSettingsChanged }: SettingsPag
   };
 
   const handleSave = async () => {
-    await db.appSettings.put({
-      id: 'main',
+    const current = await getSettings();
+    await db.appSettings.update(current.id!, {
       lmpDate,
       language: lang,
       notificationsEnabled,
@@ -64,6 +76,24 @@ export default function SettingsPage({ onClose, onSettingsChanged }: SettingsPag
     setSaved(true);
     onSettingsChanged();
     setTimeout(() => setSaved(false), 1500);
+  };
+
+  const handleLogin = async () => {
+    if (!cloudAvailable) return;
+    setLoginStep('otp');
+    try {
+      await db.cloud.login({ email: loginEmail, grant_type: 'otp' });
+      setLoginStep('idle');
+      setLoginEmail('');
+      setLoginOtp('');
+    } catch {
+      setLoginStep('idle');
+    }
+  };
+
+  const handleLogout = async () => {
+    if (!cloudAvailable) return;
+    await db.cloud.logout();
   };
 
   const handleBackup = async () => {
@@ -105,13 +135,17 @@ export default function SettingsPage({ onClose, onSettingsChanged }: SettingsPag
         ].filter(Boolean).join('\n');
         dayFolder.file('journal.txt', textContent);
 
-        // Photos
+        // Photos (stored as base64 data URLs)
         if (entry.photos?.length) {
           for (const photo of entry.photos) {
-            if (photo.blob) {
+            if (photo.dataUrl) {
               const ext = photo.mimeType?.split('/')[1] || 'jpg';
               const safeName = photo.filename || `${photo.id}.${ext}`;
-              dayFolder.file(safeName, photo.blob);
+              // Convert data URL to binary for ZIP
+              const base64Data = photo.dataUrl.split(',')[1];
+              if (base64Data) {
+                dayFolder.file(safeName, base64Data, { base64: true });
+              }
             }
           }
         }
@@ -265,6 +299,54 @@ export default function SettingsPage({ onClose, onSettingsChanged }: SettingsPag
             </button>
           </div>
         </section>
+
+        {/* Cloud Sync */}
+        {cloudAvailable && (
+          <section className="bg-white/70 rounded-2xl p-5 mb-4">
+            <h2 className="text-sm font-bold text-gray-600 mb-1">
+              ☁️ {t('cloudSync', lang)}
+            </h2>
+            <p className="text-xs text-gray-400 mb-3">{t('cloudSyncHint', lang)}</p>
+
+            {currentUser?.isLoggedIn ? (
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="w-2 h-2 rounded-full bg-green-400" />
+                  <span className="text-sm text-gray-600">
+                    {t('loggedInAs', lang)} <strong>{currentUser.email}</strong>
+                  </span>
+                </div>
+                <button
+                  onClick={handleLogout}
+                  className="w-full py-3 rounded-xl text-sm font-medium transition-all
+                             bg-gray-50 text-gray-500 border border-gray-200 hover:bg-red-50 hover:border-red-200 hover:text-red-500"
+                >
+                  {t('logout', lang)}
+                </button>
+              </div>
+            ) : (
+              <div>
+                <input
+                  type="email"
+                  value={loginEmail}
+                  onChange={(e) => setLoginEmail(e.target.value)}
+                  placeholder={t('emailPlaceholder', lang)}
+                  className="w-full px-4 py-2.5 rounded-xl bg-blue-50 border border-blue-200 text-gray-700 text-sm
+                             focus:outline-none focus:ring-2 focus:ring-blue-300 placeholder-gray-300 mb-2"
+                />
+                <button
+                  onClick={handleLogin}
+                  disabled={!loginEmail || loginStep === 'otp'}
+                  className="w-full py-3 rounded-xl text-sm font-medium transition-all
+                             bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100
+                             disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {loginStep === 'otp' ? t('checkEmail', lang) : t('loginToSync', lang)}
+                </button>
+              </div>
+            )}
+          </section>
+        )}
 
         {/* Backup / Export */}
         <section className="bg-white/70 rounded-2xl p-5 mb-4">

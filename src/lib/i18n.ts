@@ -91,6 +91,14 @@ const translations: Record<string, Record<Language, string>> = {
   exportingBackup: { zh: '正在打包备份...', en: 'Preparing backup...' },
   backupDone: { zh: '备份已下载 ✅', en: 'Backup downloaded ✅' },
   noEntriesToBackup: { zh: '还没有日记可以备份哦～', en: 'No journal entries to backup yet~' },
+  // Cloud sync
+  cloudSync: { zh: '云同步', en: 'Cloud Sync' },
+  cloudSyncHint: { zh: '登录后可在多设备间同步数据', en: 'Sign in to sync data across devices' },
+  loginToSync: { zh: '登录同步', en: 'Sign in to Sync' },
+  loggedInAs: { zh: '已登录：', en: 'Signed in as' },
+  logout: { zh: '退出登录', en: 'Sign Out' },
+  emailPlaceholder: { zh: '输入邮箱地址...', en: 'Enter email address...' },
+  checkEmail: { zh: '请查看邮箱中的验证码...', en: 'Check your email for the code...' },
 };
 
 export function t(key: string, lang: Language): string {

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { db, getSettings, type JournalEntry, type PhotoItem, generateId, createThumbnail } from '@/lib/db';
+import { db, getSettings, type JournalEntry, type PhotoItem, generateId, compressImageToDataUrl, createThumbnailDataUrl } from '@/lib/db';
 import { useLanguage, t } from '@/lib/i18n';
 import { polishJournalEntry } from '@/lib/ai';
 
@@ -16,7 +16,6 @@ export default function JournalModal({ date, existingEntry, onClose, onSaved }: 
   const { lang } = useLanguage();
   const [content, setContent] = useState(existingEntry?.rawContent || existingEntry?.content || '');
   const [photos, setPhotos] = useState<PhotoItem[]>(existingEntry?.photos || []);
-  const [photoUrls, setPhotoUrls] = useState<Map<string, string>>(new Map());
   const [isRecording, setIsRecording] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savingAi, setSavingAi] = useState(false);
@@ -28,22 +27,6 @@ export default function JournalModal({ date, existingEntry, onClose, onSaved }: 
   useEffect(() => {
     setTimeout(() => textareaRef.current?.focus(), 300);
   }, []);
-
-  // Generate object URLs for existing photo blobs
-  useEffect(() => {
-    const urls = new Map<string, string>();
-    photos.forEach((photo) => {
-      if (photo.thumbnailBlob) {
-        urls.set(photo.id, URL.createObjectURL(photo.thumbnailBlob));
-      } else if (photo.blob) {
-        urls.set(photo.id, URL.createObjectURL(photo.blob));
-      }
-    });
-    setPhotoUrls(urls);
-    return () => {
-      urls.forEach((url) => URL.revokeObjectURL(url));
-    };
-  }, [photos]);
 
   // Speech-to-text
   const toggleSpeechRecognition = () => {
@@ -88,21 +71,21 @@ export default function JournalModal({ date, existingEntry, onClose, onSaved }: 
     setIsRecording(true);
   };
 
-  // Handle photo upload as Blob
+  // Handle photo upload — compress to base64 data URLs
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
 
     const newPhotos: PhotoItem[] = [];
     for (const file of Array.from(files)) {
-      const blob = new Blob([await file.arrayBuffer()], { type: file.type });
-      const thumbnailBlob = await createThumbnail(blob);
+      const dataUrl = await compressImageToDataUrl(file);
+      const thumbnailDataUrl = await createThumbnailDataUrl(file);
       newPhotos.push({
         id: generateId(),
-        blob,
+        dataUrl,
+        thumbnailDataUrl,
         filename: file.name,
         mimeType: file.type,
-        thumbnailBlob,
       });
     }
     setPhotos((prev) => [...prev, ...newPhotos]);
@@ -120,7 +103,6 @@ export default function JournalModal({ date, existingEntry, onClose, onSaved }: 
     const rawContent = content.trim();
     let polishedContent = rawContent;
 
-    // Try AI polishing
     const settings = await getSettings();
     if (settings.aiApiKey) {
       setSavingAi(true);
@@ -128,16 +110,36 @@ export default function JournalModal({ date, existingEntry, onClose, onSaved }: 
       setSavingAi(false);
     }
 
-    const entry: JournalEntry = {
-      date,
-      rawContent,
-      content: polishedContent,
-      photos,
-      createdAt: existingEntry?.createdAt || new Date(),
-      updatedAt: new Date(),
-    };
+    if (existingEntry?.id) {
+      // Update existing entry
+      await db.journalEntries.update(existingEntry.id, {
+        rawContent,
+        content: polishedContent,
+        photos,
+        updatedAt: new Date().toISOString(),
+      });
+    } else {
+      // Check if entry already exists for this date
+      const existing = await db.journalEntries.where('date').equals(date).first();
+      if (existing?.id) {
+        await db.journalEntries.update(existing.id, {
+          rawContent,
+          content: polishedContent,
+          photos,
+          updatedAt: new Date().toISOString(),
+        });
+      } else {
+        await db.journalEntries.add({
+          date,
+          rawContent,
+          content: polishedContent,
+          photos,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+      }
+    }
 
-    await db.journalEntries.put(entry);
     setSaving(false);
     setSaved(true);
     setTimeout(() => onSaved(), 800);
@@ -154,7 +156,6 @@ export default function JournalModal({ date, existingEntry, onClose, onSaved }: 
 
       <div className="fixed inset-x-3 top-1/2 -translate-y-1/2 z-[60] max-w-lg mx-auto">
         <div className="bg-gradient-to-b from-yellow-50 to-orange-50 rounded-3xl shadow-xl overflow-hidden max-h-[90vh] flex flex-col">
-          {/* Header */}
           <div className="p-5 pb-3 flex items-center justify-between">
             <div>
               <h2 className="text-lg font-bold text-gray-700">{dateDisplay}</h2>
@@ -168,7 +169,6 @@ export default function JournalModal({ date, existingEntry, onClose, onSaved }: 
             </button>
           </div>
 
-          {/* Content */}
           <div className="overflow-y-auto px-5 pb-5 flex-1">
             <textarea
               ref={textareaRef}
@@ -180,7 +180,6 @@ export default function JournalModal({ date, existingEntry, onClose, onSaved }: 
               style={{ userSelect: 'text', WebkitUserSelect: 'text' }}
             />
 
-            {/* Voice input */}
             <button
               onClick={toggleSpeechRecognition}
               className={`w-full mt-3 py-3 rounded-2xl font-medium transition-all flex items-center justify-center gap-2 ${
@@ -199,27 +198,25 @@ export default function JournalModal({ date, existingEntry, onClose, onSaved }: 
               )}
             </button>
 
-            {/* Photos */}
             <div className="mt-4">
               {photos.length > 0 && (
                 <div className="grid grid-cols-3 gap-2 mb-3">
-                  {photos.map((photo) => {
-                    const url = photoUrls.get(photo.id);
-                    return (
-                      <div key={photo.id} className="relative aspect-square rounded-xl overflow-hidden bg-gray-100 group">
-                        {url && (
-                          <img src={url} alt={photo.filename} className="w-full h-full object-cover" />
-                        )}
-                        <button
-                          onClick={() => removePhoto(photo.id)}
-                          className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/50 text-white text-xs
-                                     opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    );
-                  })}
+                  {photos.map((photo) => (
+                    <div key={photo.id} className="relative aspect-square rounded-xl overflow-hidden bg-gray-100 group">
+                      <img
+                        src={photo.thumbnailDataUrl || photo.dataUrl}
+                        alt={photo.filename}
+                        className="w-full h-full object-cover"
+                      />
+                      <button
+                        onClick={() => removePhoto(photo.id)}
+                        className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/50 text-white text-xs
+                                   opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
                 </div>
               )}
 
@@ -240,7 +237,6 @@ export default function JournalModal({ date, existingEntry, onClose, onSaved }: 
               />
             </div>
 
-            {/* Save button */}
             <button
               onClick={handleSave}
               disabled={saving || saved || (!content.trim() && photos.length === 0)}

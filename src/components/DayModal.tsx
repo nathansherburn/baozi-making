@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, getPregnancyInfo } from '@/lib/db';
 import { useLanguage, t } from '@/lib/i18n';
@@ -17,32 +17,11 @@ export default function DayModal({ date, lmpDate, onClose }: DayModalProps) {
   const { lang } = useLanguage();
   const [showJournal, setShowJournal] = useState(false);
   const [showOriginal, setShowOriginal] = useState(false);
-  const [photoUrls, setPhotoUrls] = useState<Map<string, string>>(new Map());
 
   const entry = useLiveQuery(
-    () => db.journalEntries.get(date),
+    () => db.journalEntries.where('date').equals(date).first(),
     [date]
   );
-
-  // Create object URLs for photo blobs
-  useEffect(() => {
-    if (!entry?.photos?.length) {
-      setPhotoUrls(new Map());
-      return;
-    }
-    const urls = new Map<string, string>();
-    entry.photos.forEach((photo) => {
-      if (photo.thumbnailBlob) {
-        urls.set(photo.id, URL.createObjectURL(photo.thumbnailBlob));
-      } else if (photo.blob) {
-        urls.set(photo.id, URL.createObjectURL(photo.blob));
-      }
-    });
-    setPhotoUrls(urls);
-    return () => {
-      urls.forEach((url) => URL.revokeObjectURL(url));
-    };
-  }, [entry?.photos]);
 
   const pregnancyInfo = getPregnancyInfo(lmpDate, date);
   const weekData = getWeekDataLocalized(pregnancyInfo.week, lang);
@@ -61,8 +40,8 @@ export default function DayModal({ date, lmpDate, onClose }: DayModalProps) {
     : dateObj.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
 
   const handleDelete = async () => {
-    if (confirm(t('confirmDelete', lang))) {
-      await db.journalEntries.delete(date);
+    if (entry?.id && confirm(t('confirmDelete', lang))) {
+      await db.journalEntries.delete(entry.id);
     }
   };
 
@@ -187,16 +166,15 @@ export default function DayModal({ date, lmpDate, onClose }: DayModalProps) {
                   <div className="mt-3">
                     <p className="text-xs text-gray-400 mb-2">{t('photos', lang)} 📸</p>
                     <div className="grid grid-cols-3 gap-2">
-                      {entry.photos.map((photo) => {
-                        const url = photoUrls.get(photo.id);
-                        return (
-                          <div key={photo.id} className="aspect-square rounded-xl overflow-hidden bg-gray-100">
-                            {url && (
-                              <img src={url} alt={photo.filename} className="w-full h-full object-cover" />
-                            )}
-                          </div>
-                        );
-                      })}
+                      {entry.photos.map((photo) => (
+                        <div key={photo.id} className="aspect-square rounded-xl overflow-hidden bg-gray-100">
+                          <img
+                            src={photo.thumbnailDataUrl || photo.dataUrl}
+                            alt={photo.filename}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}

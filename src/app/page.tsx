@@ -29,7 +29,8 @@ export default function Home() {
 
   const handleSetLang = async (newLang: Language) => {
     setLang(newLang);
-    await db.appSettings.update('main', { language: newLang });
+    const settings = await getSettings();
+    await db.appSettings.update(settings.id!, { language: newLang });
   };
 
   const handleSettingsChanged = () => {
