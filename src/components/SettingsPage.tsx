@@ -63,10 +63,18 @@ export default function SettingsPage({ onClose, onSettingsChanged }: SettingsPag
     setTimeout(() => setSaved(false), 1500);
   };
 
-  // Calculate info to display
+  // Calculate info to display (guard against empty lmpDate before settings load)
   const today = new Date().toISOString().split('T')[0];
-  const info = getPregnancyInfo(lmpDate, today);
-  const dueDateStr = info.dueDate.toISOString().split('T')[0];
+  const info = lmpDate ? getPregnancyInfo(lmpDate, today) : null;
+  const dueDateStr = info?.dueDate ? info.dueDate.toISOString().split('T')[0] : '-';
+
+  if (!settings) {
+    return (
+      <div className="fixed inset-0 z-50 bg-gradient-to-b from-pink-50 via-purple-50 to-blue-50 flex items-center justify-center">
+        <p className="text-gray-400 text-sm">加载中...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 bg-gradient-to-b from-pink-50 via-purple-50 to-blue-50 overflow-y-auto">
@@ -100,7 +108,7 @@ export default function SettingsPage({ onClose, onSettingsChanged }: SettingsPag
           <div className="mt-3 flex gap-4 text-xs text-gray-400">
             <span>
               {t('currentWeek', lang)}: <strong className="text-purple-600">
-                {info.week >= 1 && info.week <= 42 ? `${info.week}${lang === 'zh' ? '周' : 'w'}+${info.day}${lang === 'zh' ? '天' : 'd'}` : '-'}
+                {info && info.week >= 1 && info.week <= 42 ? `${info.week}${lang === 'zh' ? '周' : 'w'}+${info.day}${lang === 'zh' ? '天' : 'd'}` : '-'}
               </strong>
             </span>
             <span>
