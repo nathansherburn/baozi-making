@@ -42,14 +42,17 @@ export default function Home() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-pink-50 via-purple-50 to-blue-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-16 h-16 mx-auto mb-4 animate-bounce">
-            <Image src="/bao.svg" alt="Baozi" width={64} height={64} />
+      <>
+        <LoginDialog />
+        <div className="min-h-screen bg-gradient-to-b from-pink-50 via-purple-50 to-blue-50 flex items-center justify-center">
+          <div className="text-center">
+            <div className="w-16 h-16 mx-auto mb-4 animate-bounce">
+              <Image src="/bao.svg" alt="Baozi" width={64} height={64} />
+            </div>
+            <p className="text-gray-400 text-sm">加载中...</p>
           </div>
-          <p className="text-gray-400 text-sm">加载中...</p>
         </div>
-      </div>
+      </>
     );
   }
 
