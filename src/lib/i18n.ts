@@ -104,6 +104,8 @@ const translations: Record<string, Record<Language, string>> = {
   loginSubtitle: { zh: '输入邮箱即可同步数据到所有设备', en: 'Enter your email to sync across devices' },
   otpSubtitle: { zh: '我们已发送验证码到你的邮箱', en: 'We sent a verification code to your email' },
   continue: { zh: '继续', en: 'Continue' },
+  loggingIn: { zh: '登录中...', en: 'Signing in...' },
+  loginError: { zh: '登录失败，请重试', en: 'Login failed, please try again' },
 };
 
 export function t(key: string, lang: Language): string {

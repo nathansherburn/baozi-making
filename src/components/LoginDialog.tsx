@@ -3,29 +3,121 @@
 import { useState } from 'react';
 import { useObservable } from 'dexie-react-hooks';
 import { db } from '@/lib/db';
-import { useLanguage, t } from '@/lib/i18n';
-import type { DXCUserInteraction } from 'dexie-cloud-addon';
+import { t, type Language } from '@/lib/i18n';
+import type { DXCUserInteraction, UserLogin } from 'dexie-cloud-addon';
 import Image from 'next/image';
 
-export default function LoginDialog() {
-  const { lang } = useLanguage();
-  const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
+const cloudAvailable = typeof window !== 'undefined' && !!process.env.NEXT_PUBLIC_DEXIE_CLOUD_DB_URL;
 
-  const interaction = useObservable<DXCUserInteraction | undefined>(
-    () => db.cloud.userInteraction,
-    []
+// Fallback observable that never emits (used when cloud isn't configured)
+const noopObservable = { subscribe: () => ({ unsubscribe: () => {} }) } as any;
+
+export default function LoginDialog() {
+  const [lang, setLang] = useState<Language>(
+    typeof navigator !== 'undefined' && navigator.language?.startsWith('zh') ? 'zh' : 'en'
+  );
+  const [email, setEmail] = useState('');
+  const [loggingIn, setLoggingIn] = useState(false);
+  const [error, setError] = useState('');
+
+  const currentUser = useObservable<UserLogin | undefined>(
+    () => cloudAvailable ? db.cloud.currentUser : noopObservable,
+    [cloudAvailable]
   );
 
-  if (!interaction) return null;
+  const interaction = useObservable<DXCUserInteraction | undefined>(
+    () => cloudAvailable ? db.cloud.userInteraction : noopObservable,
+    [cloudAvailable]
+  );
+
+  // Don't show anything if cloud isn't configured or user is logged in
+  if (!cloudAvailable || currentUser?.isLoggedIn) return null;
+
+  // If there's an active userInteraction (e.g. OTP prompt), show that
+  if (interaction) {
+    return <InteractionDialog interaction={interaction} lang={lang} />;
+  }
+
+  // Otherwise show our own email login screen
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email.trim()) return;
+    setError('');
+    setLoggingIn(true);
+    try {
+      await db.cloud.login({ email: email.trim(), grant_type: 'otp' });
+    } catch (err: any) {
+      setError(err?.message || t('loginError', lang));
+    } finally {
+      setLoggingIn(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-gradient-to-b from-pink-50 via-purple-50 to-blue-50 z-[100]" />
+
+      <div className="fixed inset-0 z-[110] flex items-center justify-center p-6">
+        <div className="w-full max-w-sm text-center">
+          <div className="w-20 h-20 mx-auto mb-4">
+            <Image src="/bao.svg" alt="Baozi" width={80} height={80} />
+          </div>
+
+          <h1 className="text-xl font-bold bg-gradient-to-r from-pink-500 to-purple-500 bg-clip-text text-transparent mb-1">
+            {t('appTitle', lang)}
+          </h1>
+          <p className="text-xs text-gray-400 mb-8">{t('loginSubtitle', lang)}</p>
+
+          <form onSubmit={handleLogin} className="space-y-3">
+            <input
+              type="email"
+              inputMode="email"
+              autoComplete="email"
+              autoFocus
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder={t('emailPlaceholder', lang)}
+              className="w-full px-4 py-3 rounded-xl bg-white border border-purple-200 text-gray-700 text-sm
+                         focus:outline-none focus:ring-2 focus:ring-purple-300 placeholder-gray-300"
+            />
+
+            {error && (
+              <div className="px-3 py-2 rounded-xl bg-red-50 border border-red-200 text-red-600 text-xs">
+                {error}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={loggingIn || !email.trim()}
+              className="w-full py-3 rounded-xl font-medium text-white transition-all shadow-sm
+                         bg-gradient-to-r from-pink-400 to-purple-400 hover:from-pink-500 hover:to-purple-500
+                         disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loggingIn ? t('loggingIn', lang) : t('continue', lang)}
+            </button>
+          </form>
+
+          {/* Language toggle */}
+          <button
+            onClick={() => setLang(lang === 'zh' ? 'en' : 'zh')}
+            className="mt-6 text-xs text-gray-400 hover:text-purple-400 transition-colors"
+          >
+            {lang === 'zh' ? 'English' : '中文'}
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+/** Handles Dexie Cloud userInteraction prompts (OTP, alerts, logout confirmation) */
+function InteractionDialog({ interaction, lang }: { interaction: DXCUserInteraction; lang: Language }) {
+  const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     interaction.onSubmit(fieldValues);
-    setFieldValues({});
-  };
-
-  const handleCancel = () => {
-    interaction.onCancel();
     setFieldValues({});
   };
 
@@ -43,7 +135,6 @@ export default function LoginDialog() {
 
       <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
         <div className="bg-gradient-to-b from-pink-50 to-purple-50 rounded-3xl shadow-xl w-full max-w-sm overflow-hidden">
-          {/* Header */}
           <div className="p-6 pb-2 text-center">
             <div className="w-16 h-16 mx-auto mb-3">
               <Image src="/bao.svg" alt="Baozi" width={64} height={64} />
@@ -51,15 +142,11 @@ export default function LoginDialog() {
             <h2 className="text-lg font-bold text-gray-700">
               {interaction.title || t('loginTitle', lang)}
             </h2>
-            {interaction.type === 'email' && (
-              <p className="text-xs text-gray-400 mt-1">{t('loginSubtitle', lang)}</p>
-            )}
             {interaction.type === 'otp' && (
               <p className="text-xs text-gray-400 mt-1">{t('otpSubtitle', lang)}</p>
             )}
           </div>
 
-          {/* Alerts */}
           {alertMessages.length > 0 && (
             <div className="mx-6 mt-2">
               {alertMessages.map((msg, i) => (
@@ -79,7 +166,6 @@ export default function LoginDialog() {
             </div>
           )}
 
-          {/* Form */}
           <form onSubmit={handleSubmit} className="p-6 pt-4">
             {Object.entries(interaction.fields).map(([name, field]) => {
               const f = field as { type: string; label?: string; placeholder?: string };
@@ -88,7 +174,7 @@ export default function LoginDialog() {
                   key={name}
                   type={f.type === 'otp' ? 'text' : f.type}
                   inputMode={f.type === 'otp' ? 'numeric' : f.type === 'email' ? 'email' : 'text'}
-                  autoComplete={f.type === 'email' ? 'email' : f.type === 'otp' ? 'one-time-code' : 'off'}
+                  autoComplete={f.type === 'otp' ? 'one-time-code' : f.type === 'email' ? 'email' : 'off'}
                   autoFocus
                   value={fieldValues[name] || ''}
                   onChange={(e) => setFieldValues((prev) => ({ ...prev, [name]: e.target.value }))}
@@ -98,26 +184,6 @@ export default function LoginDialog() {
                 />
               );
             })}
-
-            {/* OAuth / OTP provider options */}
-            {'options' in interaction && interaction.options && (interaction.options as any[]).length > 0 && (
-              <div className="flex flex-col gap-2 mb-3">
-                {(interaction.options as Array<{ name: string; value: string; displayName: string; iconUrl?: string }>).map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    onClick={() => interaction.onSubmit({ [option.name]: option.value })}
-                    className="w-full py-2.5 rounded-xl bg-white border border-gray-200 text-gray-600 text-sm
-                               hover:bg-purple-50 hover:border-purple-200 transition-colors flex items-center justify-center gap-2"
-                  >
-                    {option.iconUrl && (
-                      <img src={option.iconUrl} alt="" className="w-4 h-4" />
-                    )}
-                    {option.displayName}
-                  </button>
-                ))}
-              </div>
-            )}
 
             <button
               type="submit"
@@ -130,7 +196,7 @@ export default function LoginDialog() {
             {interaction.cancelLabel && (
               <button
                 type="button"
-                onClick={handleCancel}
+                onClick={() => interaction.onCancel()}
                 className="w-full mt-2 py-2.5 rounded-xl text-sm text-gray-400 hover:text-gray-600 transition-colors"
               >
                 {interaction.cancelLabel}
