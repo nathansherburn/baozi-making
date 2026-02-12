@@ -20,6 +20,11 @@ export default function Home() {
       setLang(settings.language);
       setLoading(false);
     });
+
+    // Register service worker for PWA
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
   }, []);
 
   const handleSetLang = async (newLang: Language) => {
