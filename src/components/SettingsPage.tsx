@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import JSZip from 'jszip';
 import { db, getSettings, getPregnancyInfo, type AppSettings } from '@/lib/db';
 import { useLanguage, t } from '@/lib/i18n';
 import { requestNotificationPermission, registerServiceWorker, scheduleNotification } from '@/lib/notifications';
@@ -19,6 +20,8 @@ export default function SettingsPage({ onClose, onSettingsChanged }: SettingsPag
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [notificationSupported, setNotificationSupported] = useState(true);
   const [saved, setSaved] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportDone, setExportDone] = useState(false);
 
   useEffect(() => {
     getSettings().then((s) => {
@@ -61,6 +64,76 @@ export default function SettingsPage({ onClose, onSettingsChanged }: SettingsPag
     setSaved(true);
     onSettingsChanged();
     setTimeout(() => setSaved(false), 1500);
+  };
+
+  const handleBackup = async () => {
+    const entries = await db.journalEntries.toArray();
+    if (entries.length === 0) {
+      alert(t('noEntriesToBackup', lang));
+      return;
+    }
+
+    setExporting(true);
+    try {
+      const zip = new JSZip();
+
+      // Build a JSON summary of all entries (without binary photo data)
+      const entriesSummary = entries.map((entry) => ({
+        date: entry.date,
+        content: entry.content,
+        rawContent: entry.rawContent,
+        createdAt: entry.createdAt,
+        updatedAt: entry.updatedAt,
+        photoCount: entry.photos?.length || 0,
+        photoFilenames: entry.photos?.map((p) => p.filename) || [],
+      }));
+      zip.file('journal-entries.json', JSON.stringify(entriesSummary, null, 2));
+
+      // Add each day's entry as a text file + its photos in a folder
+      for (const entry of entries) {
+        const dayFolder = zip.folder(entry.date)!;
+
+        // Text file with the journal content
+        const textContent = [
+          `# ${entry.date}`,
+          '',
+          entry.content,
+          '',
+          entry.rawContent && entry.rawContent !== entry.content
+            ? `---\n原始记录 / Original:\n${entry.rawContent}`
+            : '',
+        ].filter(Boolean).join('\n');
+        dayFolder.file('journal.txt', textContent);
+
+        // Photos
+        if (entry.photos?.length) {
+          for (const photo of entry.photos) {
+            if (photo.blob) {
+              const ext = photo.mimeType?.split('/')[1] || 'jpg';
+              const safeName = photo.filename || `${photo.id}.${ext}`;
+              dayFolder.file(safeName, photo.blob);
+            }
+          }
+        }
+      }
+
+      // Generate and download
+      const blob = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const dateStr = new Date().toISOString().split('T')[0];
+      a.href = url;
+      a.download = `baozi-diary-backup-${dateStr}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      setExportDone(true);
+      setTimeout(() => setExportDone(false), 2000);
+    } finally {
+      setExporting(false);
+    }
   };
 
   // Calculate info to display (guard against empty lmpDate before settings load)
@@ -191,6 +264,27 @@ export default function SettingsPage({ onClose, onSettingsChanged }: SettingsPag
               English
             </button>
           </div>
+        </section>
+
+        {/* Backup / Export */}
+        <section className="bg-white/70 rounded-2xl p-5 mb-4">
+          <h2 className="text-sm font-bold text-gray-600 mb-1">
+            💾 {t('backupExport', lang)}
+          </h2>
+          <p className="text-xs text-gray-400 mb-3">{t('backupExportHint', lang)}</p>
+          <button
+            onClick={handleBackup}
+            disabled={exporting}
+            className={`w-full py-3 rounded-xl text-sm font-medium transition-all ${
+              exportDone
+                ? 'bg-green-100 text-green-600 border border-green-200'
+                : exporting
+                  ? 'bg-gray-100 text-gray-400 border border-gray-200 cursor-wait'
+                  : 'bg-gray-50 text-gray-500 border border-gray-200 hover:bg-purple-50 hover:border-purple-200 hover:text-purple-600'
+            }`}
+          >
+            {exportDone ? t('backupDone', lang) : exporting ? t('exportingBackup', lang) : t('downloadBackup', lang)}
+          </button>
         </section>
 
         {/* Save button */}

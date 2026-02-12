@@ -85,6 +85,12 @@ const translations: Record<string, Record<Language, string>> = {
   showPolished: { zh: '查看润色版', en: 'Show Polished' },
   calculatedDueDate: { zh: '预计预产期', en: 'Estimated Due Date' },
   currentWeek: { zh: '当前孕周', en: 'Current Week' },
+  backupExport: { zh: '数据备份', en: 'Data Backup' },
+  backupExportHint: { zh: '下载所有日记和照片的备份文件（ZIP）', en: 'Download a backup of all journal entries and photos (ZIP)' },
+  downloadBackup: { zh: '下载备份', en: 'Download Backup' },
+  exportingBackup: { zh: '正在打包备份...', en: 'Preparing backup...' },
+  backupDone: { zh: '备份已下载 ✅', en: 'Backup downloaded ✅' },
+  noEntriesToBackup: { zh: '还没有日记可以备份哦～', en: 'No journal entries to backup yet~' },
 };
 
 export function t(key: string, lang: Language): string {
