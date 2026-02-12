@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { db, type JournalEntry, type PhotoItem } from '@/lib/db';
+import { db, getSettings, type JournalEntry, type PhotoItem, generateId, createThumbnail } from '@/lib/db';
 import { useLanguage, t } from '@/lib/i18n';
+import { polishJournalEntry } from '@/lib/ai';
 
 interface JournalModalProps {
   date: string;
@@ -13,18 +14,36 @@ interface JournalModalProps {
 
 export default function JournalModal({ date, existingEntry, onClose, onSaved }: JournalModalProps) {
   const { lang } = useLanguage();
-  const [content, setContent] = useState(existingEntry?.content || '');
+  const [content, setContent] = useState(existingEntry?.rawContent || existingEntry?.content || '');
   const [photos, setPhotos] = useState<PhotoItem[]>(existingEntry?.photos || []);
+  const [photoUrls, setPhotoUrls] = useState<Map<string, string>>(new Map());
   const [isRecording, setIsRecording] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [savingAi, setSavingAi] = useState(false);
   const [saved, setSaved] = useState(false);
   const recognitionRef = useRef<any>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Auto-focus textarea
   useEffect(() => {
     setTimeout(() => textareaRef.current?.focus(), 300);
   }, []);
+
+  // Generate object URLs for existing photo blobs
+  useEffect(() => {
+    const urls = new Map<string, string>();
+    photos.forEach((photo) => {
+      if (photo.thumbnailBlob) {
+        urls.set(photo.id, URL.createObjectURL(photo.thumbnailBlob));
+      } else if (photo.blob) {
+        urls.set(photo.id, URL.createObjectURL(photo.blob));
+      }
+    });
+    setPhotoUrls(urls);
+    return () => {
+      urls.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [photos]);
 
   // Speech-to-text
   const toggleSpeechRecognition = () => {
@@ -61,72 +80,67 @@ export default function JournalModal({ date, existingEntry, onClose, onSaved }: 
       }
     };
 
-    recognition.onerror = () => {
-      setIsRecording(false);
-    };
-
-    recognition.onend = () => {
-      setIsRecording(false);
-    };
+    recognition.onerror = () => setIsRecording(false);
+    recognition.onend = () => setIsRecording(false);
 
     recognitionRef.current = recognition;
     recognition.start();
     setIsRecording(true);
   };
 
-  // Handle local photo upload
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle photo upload as Blob
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
 
-    Array.from(files).forEach(file => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const dataUrl = reader.result as string;
-        setPhotos(prev => [...prev, {
-          url: dataUrl,
-          thumbnailUrl: dataUrl,
-          filename: file.name,
-        }]);
-      };
-      reader.readAsDataURL(file);
-    });
-
-    // Reset input
+    const newPhotos: PhotoItem[] = [];
+    for (const file of Array.from(files)) {
+      const blob = new Blob([await file.arrayBuffer()], { type: file.type });
+      const thumbnailBlob = await createThumbnail(blob);
+      newPhotos.push({
+        id: generateId(),
+        blob,
+        filename: file.name,
+        mimeType: file.type,
+        thumbnailBlob,
+      });
+    }
+    setPhotos((prev) => [...prev, ...newPhotos]);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  // Open Google Photos picker
-  const openGooglePhotosPicker = () => {
-    // Google Photos Picker API requires OAuth setup
-    // For now, we'll show instructions
-    alert(
-      lang === 'zh'
-        ? '要使用Google相册，请先在设置中配置Google API密钥。\n目前可以使用本地上传照片功能。'
-        : 'To use Google Photos, configure your Google API key in settings.\nFor now, use local photo upload.'
-    );
-  };
-
-  const removePhoto = (index: number) => {
-    setPhotos(prev => prev.filter((_, i) => i !== index));
+  const removePhoto = (id: string) => {
+    setPhotos((prev) => prev.filter((p) => p.id !== id));
   };
 
   const handleSave = async () => {
     if (!content.trim() && photos.length === 0) return;
 
+    setSaving(true);
+    const rawContent = content.trim();
+    let polishedContent = rawContent;
+
+    // Try AI polishing
+    const settings = await getSettings();
+    if (settings.aiApiKey) {
+      setSavingAi(true);
+      polishedContent = await polishJournalEntry(rawContent, settings.aiApiKey, lang, settings.aiModel);
+      setSavingAi(false);
+    }
+
     const entry: JournalEntry = {
       date,
-      content: content.trim(),
+      rawContent,
+      content: polishedContent,
       photos,
       createdAt: existingEntry?.createdAt || new Date(),
       updatedAt: new Date(),
     };
 
     await db.journalEntries.put(entry);
+    setSaving(false);
     setSaved(true);
-    setTimeout(() => {
-      onSaved();
-    }, 800);
+    setTimeout(() => onSaved(), 800);
   };
 
   const dateObj = new Date(date + 'T00:00:00');
@@ -136,10 +150,8 @@ export default function JournalModal({ date, existingEntry, onClose, onSaved }: 
 
   return (
     <>
-      {/* Backdrop */}
       <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50" onClick={onClose} />
 
-      {/* Modal */}
       <div className="fixed inset-x-3 top-1/2 -translate-y-1/2 z-[60] max-w-lg mx-auto">
         <div className="bg-gradient-to-b from-yellow-50 to-orange-50 rounded-3xl shadow-xl overflow-hidden max-h-[90vh] flex flex-col">
           {/* Header */}
@@ -158,7 +170,6 @@ export default function JournalModal({ date, existingEntry, onClose, onSaved }: 
 
           {/* Content */}
           <div className="overflow-y-auto px-5 pb-5 flex-1">
-            {/* Text input */}
             <textarea
               ref={textareaRef}
               value={content}
@@ -166,9 +177,10 @@ export default function JournalModal({ date, existingEntry, onClose, onSaved }: 
               placeholder={t('typeFeelings', lang)}
               className="w-full h-40 bg-white/70 rounded-2xl p-4 text-sm text-gray-700 placeholder-gray-300
                          border-none outline-none resize-none focus:ring-2 focus:ring-orange-200 transition-all"
+              style={{ userSelect: 'text', WebkitUserSelect: 'text' }}
             />
 
-            {/* Voice input button */}
+            {/* Voice input */}
             <button
               onClick={toggleSpeechRecognition}
               className={`w-full mt-3 py-3 rounded-2xl font-medium transition-all flex items-center justify-center gap-2 ${
@@ -187,47 +199,37 @@ export default function JournalModal({ date, existingEntry, onClose, onSaved }: 
               )}
             </button>
 
-            {/* Photo section */}
+            {/* Photos */}
             <div className="mt-4">
-              {/* Photo grid */}
               {photos.length > 0 && (
                 <div className="grid grid-cols-3 gap-2 mb-3">
-                  {photos.map((photo, i) => (
-                    <div key={i} className="relative aspect-square rounded-xl overflow-hidden bg-gray-100 group">
-                      <img
-                        src={photo.thumbnailUrl || photo.url}
-                        alt={photo.filename}
-                        className="w-full h-full object-cover"
-                      />
-                      <button
-                        onClick={() => removePhoto(i)}
-                        className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/50 text-white text-xs
-                                   opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  ))}
+                  {photos.map((photo) => {
+                    const url = photoUrls.get(photo.id);
+                    return (
+                      <div key={photo.id} className="relative aspect-square rounded-xl overflow-hidden bg-gray-100 group">
+                        {url && (
+                          <img src={url} alt={photo.filename} className="w-full h-full object-cover" />
+                        )}
+                        <button
+                          onClick={() => removePhoto(photo.id)}
+                          className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/50 text-white text-xs
+                                     opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 
-              {/* Photo upload buttons */}
-              <div className="flex gap-2">
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex-1 py-2.5 rounded-2xl bg-white/70 text-gray-500 text-sm
-                             hover:bg-white hover:text-orange-500 transition-colors"
-                >
-                  {t('addPhotosLocal', lang)}
-                </button>
-                <button
-                  onClick={openGooglePhotosPicker}
-                  className="flex-1 py-2.5 rounded-2xl bg-white/70 text-gray-500 text-sm
-                             hover:bg-white hover:text-blue-500 transition-colors"
-                >
-                  {t('selectPhotos', lang)}
-                </button>
-              </div>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="w-full py-2.5 rounded-2xl bg-white/70 text-gray-500 text-sm
+                           hover:bg-white hover:text-orange-500 transition-colors"
+              >
+                {t('addPhotos', lang)}
+              </button>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -241,14 +243,16 @@ export default function JournalModal({ date, existingEntry, onClose, onSaved }: 
             {/* Save button */}
             <button
               onClick={handleSave}
-              disabled={saved || (!content.trim() && photos.length === 0)}
+              disabled={saving || saved || (!content.trim() && photos.length === 0)}
               className={`w-full mt-4 py-3 rounded-2xl font-medium text-white transition-all shadow-sm ${
                 saved
                   ? 'bg-green-400'
-                  : 'bg-orange-400 hover:bg-orange-500 disabled:opacity-40 disabled:cursor-not-allowed'
+                  : saving
+                    ? 'bg-orange-300 cursor-wait'
+                    : 'bg-orange-400 hover:bg-orange-500 disabled:opacity-40 disabled:cursor-not-allowed'
               }`}
             >
-              {saved ? t('saved', lang) : t('save', lang)}
+              {saved ? t('saved', lang) : savingAi ? t('savingWithAi', lang) : t('save', lang)}
             </button>
           </div>
         </div>

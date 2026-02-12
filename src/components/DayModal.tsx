@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db, getPregnancyInfo, type JournalEntry } from '@/lib/db';
+import { db, getPregnancyInfo } from '@/lib/db';
 import { useLanguage, t } from '@/lib/i18n';
 import { getWeekDataLocalized, getTrimester } from '@/lib/pregnancyData';
 import JournalModal from './JournalModal';
@@ -16,25 +16,45 @@ interface DayModalProps {
 export default function DayModal({ date, lmpDate, onClose }: DayModalProps) {
   const { lang } = useLanguage();
   const [showJournal, setShowJournal] = useState(false);
-  const [showEntry, setShowEntry] = useState(false);
+  const [showOriginal, setShowOriginal] = useState(false);
+  const [photoUrls, setPhotoUrls] = useState<Map<string, string>>(new Map());
 
   const entry = useLiveQuery(
     () => db.journalEntries.get(date),
     [date]
   );
 
+  // Create object URLs for photo blobs
+  useEffect(() => {
+    if (!entry?.photos?.length) {
+      setPhotoUrls(new Map());
+      return;
+    }
+    const urls = new Map<string, string>();
+    entry.photos.forEach((photo) => {
+      if (photo.thumbnailBlob) {
+        urls.set(photo.id, URL.createObjectURL(photo.thumbnailBlob));
+      } else if (photo.blob) {
+        urls.set(photo.id, URL.createObjectURL(photo.blob));
+      }
+    });
+    setPhotoUrls(urls);
+    return () => {
+      urls.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [entry?.photos]);
+
   const pregnancyInfo = getPregnancyInfo(lmpDate, date);
   const weekData = getWeekDataLocalized(pregnancyInfo.week, lang);
 
   const trimester = getTrimester(pregnancyInfo.week);
   const trimesterColors = {
-    1: { bg: 'from-pink-50 to-rose-50', border: 'border-pink-200', accent: 'text-pink-600', btn: 'bg-pink-400 hover:bg-pink-500' },
-    2: { bg: 'from-purple-50 to-violet-50', border: 'border-purple-200', accent: 'text-purple-600', btn: 'bg-purple-400 hover:bg-purple-500' },
-    3: { bg: 'from-blue-50 to-sky-50', border: 'border-blue-200', accent: 'text-blue-600', btn: 'bg-blue-400 hover:bg-blue-500' },
+    1: { bg: 'from-pink-50 to-rose-50', accent: 'text-pink-600', btn: 'bg-pink-400 hover:bg-pink-500' },
+    2: { bg: 'from-purple-50 to-violet-50', accent: 'text-purple-600', btn: 'bg-purple-400 hover:bg-purple-500' },
+    3: { bg: 'from-blue-50 to-sky-50', accent: 'text-blue-600', btn: 'bg-blue-400 hover:bg-blue-500' },
   };
   const colors = trimesterColors[trimester];
 
-  // Format date nicely
   const dateObj = new Date(date + 'T00:00:00');
   const dateDisplay = lang === 'zh'
     ? `${dateObj.getMonth() + 1}月${dateObj.getDate()}日`
@@ -46,15 +66,13 @@ export default function DayModal({ date, lmpDate, onClose }: DayModalProps) {
     }
   };
 
-  // If entry exists and user clicks the day, show the combined view
   const hasEntry = !!entry;
+  const hasAiPolished = entry && entry.rawContent && entry.content !== entry.rawContent;
 
   return (
     <>
-      {/* Backdrop */}
       <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-40" onClick={onClose} />
 
-      {/* Modal */}
       <div className="fixed inset-x-4 top-1/2 -translate-y-1/2 z-50 max-w-lg mx-auto">
         <div className={`bg-gradient-to-b ${colors.bg} rounded-3xl shadow-xl overflow-hidden max-h-[85vh] flex flex-col`}>
           {/* Header */}
@@ -69,7 +87,6 @@ export default function DayModal({ date, lmpDate, onClose }: DayModalProps) {
               </button>
             </div>
 
-            {/* Pregnancy info */}
             {weekData && pregnancyInfo.week >= 1 && pregnancyInfo.week <= 40 ? (
               <div className={`${colors.accent} text-sm font-medium`}>
                 {t('pregnancyWeek', lang)}{pregnancyInfo.week}{t('weekUnit', lang)} + {pregnancyInfo.day}{lang === 'zh' ? '天' : 'd'}
@@ -99,7 +116,6 @@ export default function DayModal({ date, lmpDate, onClose }: DayModalProps) {
                   </div>
                 </div>
 
-                {/* Baby development */}
                 <div className="bg-white/70 rounded-2xl p-4 mb-3">
                   <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">
                     {t('babyDevelopment', lang)} 👶
@@ -107,7 +123,6 @@ export default function DayModal({ date, lmpDate, onClose }: DayModalProps) {
                   <p className="text-sm text-gray-600 leading-relaxed">{weekData.development}</p>
                 </div>
 
-                {/* Mom changes */}
                 <div className="bg-white/70 rounded-2xl p-4 mb-3">
                   <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">
                     {t('momChanges', lang)} 🤰
@@ -115,7 +130,6 @@ export default function DayModal({ date, lmpDate, onClose }: DayModalProps) {
                   <p className="text-sm text-gray-600 leading-relaxed">{weekData.momChanges}</p>
                 </div>
 
-                {/* Tips */}
                 <div className="bg-white/70 rounded-2xl p-4 mb-3">
                   <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">
                     {t('thingsToNote', lang)} 💡
@@ -125,13 +139,20 @@ export default function DayModal({ date, lmpDate, onClose }: DayModalProps) {
               </>
             )}
 
-            {/* Journal entry (if exists) */}
+            {/* Journal entry */}
             {hasEntry && entry && (
               <div className="bg-white/90 rounded-2xl p-4 mb-3 border border-dashed border-purple-200">
                 <div className="flex items-center justify-between mb-2">
-                  <p className="text-xs text-gray-400 uppercase tracking-wide">
-                    {t('myFeeling', lang)} 💭
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs text-gray-400 uppercase tracking-wide">
+                      {t('myFeeling', lang)} 💭
+                    </p>
+                    {hasAiPolished && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-500">
+                        {t('aiPolished', lang)}
+                      </span>
+                    )}
+                  </div>
                   <div className="flex gap-1">
                     <button
                       onClick={() => setShowJournal(true)}
@@ -148,29 +169,40 @@ export default function DayModal({ date, lmpDate, onClose }: DayModalProps) {
                     </button>
                   </div>
                 </div>
-                <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">{entry.content}</p>
+
+                <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">
+                  {showOriginal ? entry.rawContent : entry.content}
+                </p>
+                {hasAiPolished && (
+                  <button
+                    onClick={() => setShowOriginal(!showOriginal)}
+                    className="mt-2 text-xs text-purple-400 hover:text-purple-600"
+                  >
+                    {showOriginal ? t('showPolished', lang) : t('showOriginal', lang)}
+                  </button>
+                )}
 
                 {/* Photos */}
                 {entry.photos && entry.photos.length > 0 && (
                   <div className="mt-3">
                     <p className="text-xs text-gray-400 mb-2">{t('photos', lang)} 📸</p>
                     <div className="grid grid-cols-3 gap-2">
-                      {entry.photos.map((photo, i) => (
-                        <div key={i} className="aspect-square rounded-xl overflow-hidden bg-gray-100">
-                          <img
-                            src={photo.thumbnailUrl || photo.url}
-                            alt={photo.filename}
-                            className="w-full h-full object-cover"
-                          />
-                        </div>
-                      ))}
+                      {entry.photos.map((photo) => {
+                        const url = photoUrls.get(photo.id);
+                        return (
+                          <div key={photo.id} className="aspect-square rounded-xl overflow-hidden bg-gray-100">
+                            {url && (
+                              <img src={url} alt={photo.filename} className="w-full h-full object-cover" />
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
               </div>
             )}
 
-            {/* Record feelings button */}
             <button
               onClick={() => setShowJournal(true)}
               className={`w-full py-3 rounded-2xl text-white font-medium ${colors.btn} transition-colors shadow-sm`}
@@ -181,7 +213,6 @@ export default function DayModal({ date, lmpDate, onClose }: DayModalProps) {
         </div>
       </div>
 
-      {/* Journal modal */}
       {showJournal && (
         <JournalModal
           date={date}

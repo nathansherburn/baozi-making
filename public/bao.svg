@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none">
+  <!-- Bao body (steamed bun shape) -->
+  <ellipse cx="50" cy="58" rx="38" ry="32" fill="#FDE8D8"/>
+  <ellipse cx="50" cy="58" rx="38" ry="32" fill="url(#baoGrad)" opacity="0.6"/>
+
+  <!-- Bottom pleats/folds -->
+  <path d="M20 65 Q25 72 32 68" stroke="#E8C9B0" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+  <path d="M30 69 Q36 75 42 70" stroke="#E8C9B0" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+  <path d="M58 70 Q64 75 70 69" stroke="#E8C9B0" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+  <path d="M68 68 Q75 72 80 65" stroke="#E8C9B0" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+
+  <!-- Top pinch/fold -->
+  <path d="M43 28 Q50 22 57 28" stroke="#E8C9B0" stroke-width="2" fill="none" stroke-linecap="round"/>
+  <path d="M46 30 Q50 25 54 30" stroke="#DEB89A" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+
+  <!-- Face - sleepy happy eyes -->
+  <path d="M35 52 Q38 48 41 52" stroke="#B08968" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  <path d="M59 52 Q62 48 65 52" stroke="#B08968" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+
+  <!-- Blush cheeks -->
+  <circle cx="33" cy="58" r="5" fill="#FFB5B5" opacity="0.5"/>
+  <circle cx="67" cy="58" r="5" fill="#FFB5B5" opacity="0.5"/>
+
+  <!-- Smile -->
+  <path d="M44 62 Q50 68 56 62" stroke="#B08968" stroke-width="2" fill="none" stroke-linecap="round"/>
+
+  <!-- Tiny heart -->
+  <path d="M74 38 C74 36 71 34 71 36.5 C71 38.5 74 40.5 74 40.5 C74 40.5 77 38.5 77 36.5 C77 34 74 36 74 38Z" fill="#FFB5B5" opacity="0.7"/>
+
+  <!-- Steam wisps -->
+  <path d="M38 18 Q36 12 38 8" stroke="#E8D5C4" stroke-width="1.5" fill="none" stroke-linecap="round" opacity="0.5"/>
+  <path d="M50 15 Q48 9 50 4" stroke="#E8D5C4" stroke-width="1.5" fill="none" stroke-linecap="round" opacity="0.5"/>
+  <path d="M62 18 Q60 12 62 8" stroke="#E8D5C4" stroke-width="1.5" fill="none" stroke-linecap="round" opacity="0.5"/>
+
+  <defs>
+    <radialGradient id="baoGrad" cx="0.4" cy="0.3" r="0.7">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="#F5DCC8" stop-opacity="0.2"/>
+    </radialGradient>
+  </defs>
+</svg>
